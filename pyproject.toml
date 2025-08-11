@@ -1,0 +1,34 @@
+############################
+# --- Package Settings --- #
+############################
+
+[project]
+name = "pybites_blog"
+description = "My package description"
+authors = [{ name = "<your name>", email = "some-email@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+"beautifulsoup4",
+"boto3",
+"duckdb",
+"fastapi", 
+"python-multipart", "pydantic-settings",
+"loguru",
+"lxml",
+"pyarrow",
+"requests",
+"selenium",
+]
+classifiers = ["Programming Language :: Python :: 3"]
+keywords = ["one", "two"]
+
+# version will be derived dynamically from version.txt via setuptools
+dynamic = ["version"]
+
+
+[build-system]
+# Minimum requirements for the build system to execute.
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
