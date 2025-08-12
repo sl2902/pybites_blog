@@ -121,7 +121,7 @@ def author_chart():
         select author, count(*) as article_count
         from silver_pybites_blogs 
         group by author 
-        order by count(*) desc 
+        order by count(*) desc, author
         limit 10
     """
     
@@ -148,7 +148,7 @@ def get_recent_articles(limit=10):
     qry = f"""
         select title, author, tags, date_published
         from silver_pybites_blogs 
-        order by date_published desc, author
+        order by date_published desc
         limit {limit}
     """
     
