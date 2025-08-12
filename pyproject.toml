@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
+"altair",
 "beautifulsoup4",
 "boto3",
 "duckdb",
@@ -17,9 +18,11 @@ dependencies = [
 "python-multipart", "pydantic-settings",
 "loguru",
 "lxml",
+"pandas",
 "pyarrow",
 "requests",
 "selenium",
+"streamlit",
 ]
 classifiers = ["Programming Language :: Python :: 3"]
 keywords = ["one", "two"]
