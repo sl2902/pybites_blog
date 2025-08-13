@@ -19,6 +19,7 @@ dependencies = [
 "loguru",
 "lxml",
 "pandas",
+"python-dotenv",
 "pyarrow",
 "requests",
 "selenium",
