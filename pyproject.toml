@@ -33,6 +33,7 @@ dynamic = ["version"]
 
 [tool.poetry]
 name = "pybites_blog"
+package-mode = false
 version = "0.1.0"
 description = ""
 authors = ["Your Name <you@example.com>"]
