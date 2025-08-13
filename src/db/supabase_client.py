@@ -25,13 +25,13 @@ class SupabaseConnector:
         if params:
             self.params = params
         else:
-            self.params = psycopg2.connect(
-                host=st.secrets["supabase"]["host"],
-                database=st.secrets["supabase"]["database"], 
-                user=st.secrets["supabase"]["user"],
-                password=st.secrets["supabase"]["password"],
-                port=st.secrets["supabase"]["port"],
-            )
+            self.params = {
+                "host": st.secrets["supabase"]["host"],
+                "database": st.secrets["supabase"]["database"],
+                "user": st.secrets["supabase"]["user"],
+                "password": st.secrets["supabase"]["password"],
+                "port": st.secrets["supabase"]["port"],
+            }
     
     def connect(self) -> psycopg2.extensions.connection:
         """Create Supabase connection"""
