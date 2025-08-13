@@ -1,6 +1,6 @@
 """Build bronze tables in Duckdb"""
 import os
-from db.duckdb_client import DuckDBConnector, enable_aws_for_duckdb
+from db.duckdb_client import DuckDBConnector, enable_aws_for_database
 from loguru import logger
 from typing import Any, List, Tuple
 from pybites_site.blog_parser import (
@@ -11,7 +11,7 @@ from pybites_site.blog_parser import (
 
 db = DuckDBConnector('pybites.db')
 try:
-    enable_aws_for_duckdb(db, region='us-west-2', logger=logger)
+    enable_aws_for_database(db, region='us-west-2', logger=logger)
 except Exception as e:
     logger.error(f"Error enabling AWS for DuckDB: {e}")
     raise
