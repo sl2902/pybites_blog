@@ -81,24 +81,25 @@ class DuckDBConnector:
         finally:
             self.close()
 
-def enable_aws_for_duckdb(db, region='us-west-2', logger=None):
-    """Enable AWS S3 access for DuckDB connection"""
-    db.execute("INSTALL httpfs;")
-    db.execute("LOAD httpfs;")
-    db.execute(f"SET s3_region='{region}';")
+def enable_aws_for_database(db, region='us-west-2', logger=None):
+    """Enable AWS S3 access for database connection"""
+    if isinstance(db, duckdb.DuckDBPyConnection):
+        db.execute("INSTALL httpfs;")
+        db.execute("LOAD httpfs;")
+        db.execute(f"SET s3_region='{region}';")
 
-    access_key = os.getenv('AWS_ACCESS_KEY_ID')
-    secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-    session_token = os.getenv('AWS_SESSION_TOKEN')
+        access_key = os.getenv('AWS_ACCESS_KEY_ID')
+        secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+        session_token = os.getenv('AWS_SESSION_TOKEN')
 
-    if access_key and secret_key:
-        db.execute(f"SET s3_access_key_id='{access_key}';")
-        db.execute(f"SET s3_secret_access_key='{secret_key}';")
-        if session_token:
-            db.execute(f"SET s3_session_token='{session_token}';")
-        if logger:
-            logger.info("Using AWS SSO temporary credentials from environment")
-    else:
-        if logger:
-            logger.error("No AWS credentials found")
-        raise Exception("No AWS credentials found")
+        if access_key and secret_key:
+            db.execute(f"SET s3_access_key_id='{access_key}';")
+            db.execute(f"SET s3_secret_access_key='{secret_key}';")
+            if session_token:
+                db.execute(f"SET s3_session_token='{session_token}';")
+            if logger:
+                logger.info("Using AWS SSO temporary credentials from environment")
+        else:
+            if logger:
+                logger.error("No AWS credentials found")
+            raise Exception("No AWS credentials found")
