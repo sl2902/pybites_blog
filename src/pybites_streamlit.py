@@ -1,6 +1,6 @@
 """Streamlit dashboard for Pybites blog"""
 import os
-from db.duckdb_client import DuckDBConnector, enable_aws_for_database
+# from db.duckdb_client import DuckDBConnector, enable_aws_for_database
 from db.supabase_client import SupabaseConnector
 import streamlit as st
 from loguru import logger
@@ -9,12 +9,12 @@ from datetime import date, datetime, timedelta
 import altair as alt
 import pandas as pd
 
-duckdb_db = DuckDBConnector('pybites.db')
-try:
-    enable_aws_for_database(duckdb_db, region='us-west-2', logger=logger)
-except Exception as e:
-    logger.error(f"Error enabling AWS for DuckDB: {e}")
-    raise
+# duckdb_db = DuckDBConnector('pybites.db')
+# try:
+#     enable_aws_for_database(duckdb_db, region='us-west-2', logger=logger)
+# except Exception as e:
+#     logger.error(f"Error enabling AWS for DuckDB: {e}")
+#     raise
 
 params = {
      "host": os.getenv("SUPABASE_HOST"),
@@ -25,7 +25,13 @@ params = {
     #  "pool_mode": os.getenv("SUPABASE_POOLMODE")
 }
 
-db = SupabaseConnector(params)
+try:
+    db = SupabaseConnector()
+    logger.info("Supabase is using Streamlit secrets")
+except st.errors.StreamlitSecretNotFoundError:
+    db = SupabaseConnector(params)
+    logger.info("Supabase is using locally stored secrets")
+
 
 gold_table = "gold_pybites_blogs"
 
