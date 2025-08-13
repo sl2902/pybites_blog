@@ -1,1 +1,3 @@
 libpq-dev
+gcc
+python3-dev
