@@ -1,6 +1,7 @@
 """Streamlit dashboard for Pybites blog"""
 import os
-from db.duckdb_client import DuckDBConnector, enable_aws_for_duckdb
+from db.duckdb_client import DuckDBConnector, enable_aws_for_database
+from db.supabase_client import SupabaseConnector
 import streamlit as st
 from loguru import logger
 from typing import Any, List, Tuple
@@ -8,12 +9,25 @@ from datetime import date, datetime, timedelta
 import altair as alt
 import pandas as pd
 
-db = DuckDBConnector('pybites.db')
+duckdb_db = DuckDBConnector('pybites.db')
 try:
-    enable_aws_for_duckdb(db, region='us-west-2', logger=logger)
+    enable_aws_for_database(duckdb_db, region='us-west-2', logger=logger)
 except Exception as e:
     logger.error(f"Error enabling AWS for DuckDB: {e}")
     raise
+
+params = {
+     "host": os.getenv("SUPABASE_HOST"),
+     "database": os.getenv("SUPABASE_DB"),
+     "user": os.getenv("SUPABASE_USER"),
+     "password": os.getenv("SUPABASE_PWD"),
+     "port": os.getenv("SUPABASE_PORT"),
+    #  "pool_mode": os.getenv("SUPABASE_POOLMODE")
+}
+
+db = SupabaseConnector(params)
+
+gold_table = "gold_pybites_blogs"
 
 st.set_page_config(
     page_title="🐍 Pybites Blog Analytics Dashboard", 
@@ -25,19 +39,19 @@ def get_overview_metrics():
     today = date.today()
     last_six_month_start = date(today.year, today.month, 1) - timedelta(days=180)
 
-    total_query = "select count(*) as total from silver_pybites_blogs"
+    total_query = f"select count(*) as total from {gold_table}"
     total_articles = db.fetchall(total_query)[0][0]
 
     last_six_month_query = f"""
         select count(*) as last_6_monthly_count 
-        from silver_pybites_blogs 
+        from {gold_table} 
         where date_published >= '{last_six_month_start}'
     """
     last_six_month_articles = db.fetchall(last_six_month_query)[0][0]
 
-    top_author_query = """
+    top_author_query = f"""
         select author, count(*) as article_count
-        from silver_pybites_blogs 
+        from {gold_table} 
         group by author 
         order by count(*) desc
         limit 1
@@ -45,11 +59,11 @@ def get_overview_metrics():
     top_author_result = db.fetchall(top_author_query)[0][0]
     top_author = top_author_result or "N/A"
 
-    top_three_tags = """
+    top_three_tags = f"""
         with base as (
             select
                 unnest(tags) t
-            from silver_pybites_blogs
+            from {gold_table}
             )
             select
                 t,
@@ -79,7 +93,7 @@ def line_chart(date_range: Tuple[datetime, datetime]) -> None:
                 extract(month from date_published) as month,
                 count(*) as n_articles
             from
-                silver_pybites_blogs
+                {gold_table}
             where
                 date_published between '{start_date}' and '{end_date}'
             group by
@@ -117,9 +131,9 @@ def line_chart(date_range: Tuple[datetime, datetime]) -> None:
 
 def author_chart():
     """Create bar chart for articles by author"""
-    qry = """
+    qry = f"""
         select author, count(*) as article_count
-        from silver_pybites_blogs 
+        from {gold_table} 
         group by author 
         order by count(*) desc, author
         limit 10
@@ -146,15 +160,15 @@ def author_chart():
 def get_recent_articles(limit=10):
     """Get recent articles for the data tab"""
     qry = f"""
-        select title, author, tags, date_published
-        from silver_pybites_blogs 
+        select title, author, tags, date_published, date_modified
+        from {gold_table} 
         order by date_published desc
         limit {limit}
     """
     
     result = db.fetchall(qry)
     if result:
-        df = pd.DataFrame(result, columns=["Title", "Author", "Tags", "Published"])
+        df = pd.DataFrame(result, columns=["Title", "Author", "Tags", "Published", "Modified"])
         return df
     return pd.DataFrame()
 
