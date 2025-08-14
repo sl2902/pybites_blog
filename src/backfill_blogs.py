@@ -1,6 +1,6 @@
 """Backfill historical blog pages"""
 from duckdb.duckdb import Error, CatalogException, ParserException
-from db.duckdb_client import DuckDBConnector, enable_aws_for_duckdb
+from db.duckdb_client import DuckDBConnector, enable_aws_for_database
 from pybites_site.blog_parser import (
  PyBitesBlogParser,
  base_url,
@@ -15,7 +15,7 @@ import pyarrow.parquet as pq
 
 db = DuckDBConnector('pybites.db')
 try:
-    enable_aws_for_duckdb(db, region='us-west-2', logger=logger)
+    enable_aws_for_database(db, region='us-west-2', logger=logger)
 except Exception as e:
     logger.error(f"Error enabling AWS for DuckDB: {e}")
     raise
