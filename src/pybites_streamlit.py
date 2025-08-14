@@ -84,8 +84,22 @@ def get_overview_metrics():
     return total_articles, last_six_month_articles, top_author, top_tag
 
 
-def fetch_authors(table_name: str = "author_list"):
-    result = db.fetchall(f"select author from {table_name}")
+def fetch_authors(table_name: str) -> List[Tuple]:
+    result = db.fetchall(f"select author from {table_name} group by author order by author")
+    return result
+
+def fetch_tags(table_name: str) -> List[Tuple]:
+    result = db.fetchall(f"""
+        with base as (
+            select
+                unnest(tags) as t
+            from
+                {table_name}
+        )
+        select t as tags from base
+    """
+    )
+    return result
 
 
 def line_chart(date_range: Tuple[datetime, datetime]) -> None:
@@ -163,20 +177,62 @@ def author_chart():
     
     st.altair_chart(chart, use_container_width=True)
 
-def get_recent_articles(limit=10):
+def get_recent_articles(query_selection: List, limit: int = 10, choice: str = "And") -> pd.DataFrame:
     """Get recent articles for the data tab"""
     qry = f"""
         select title, author, tags, date_published, date_modified
-        from {gold_table} 
+        from {gold_table}
+        where 1=1
+    """
+    and_author, and_tag, or_tag = "", "", ""
+    if not query_selection:
+        result = db.fetchall(qry)
+    if "author" in query_selection:
+        if "All" in query_selection.get("author"):
+            result = db.fetchall(qry)
+        else:
+            and_author = f"""
+            and author in ({", ".join([f"'{author}'" for author in query_selection.get("author")])})
+        """
+    if "tag" in query_selection:
+        if "All" in query_selection.get("tag"):
+            result = db.fetchall(qry)
+        elif len(and_author) > 0:
+            and_tag = f"""
+            and tags @> array[{", ".join([f"'{tag}'" for tag in query_selection.get("tag")])}]
+        """
+            or_tag = f"""
+            or tags @> array[{", ".join([f"'{tag}'" for tag in query_selection.get("tag")])}]
+        """
+        else:
+            and_tag = f"""
+            and tags @> array[{", ".join([f"'{tag}'" for tag in query_selection.get("tag")])}]
+        """
+        
+    order_clause = f"""
         order by date_published desc
         limit {limit}
     """
+    if choice == "And":
+        if and_author:
+            qry += and_author.lstrip()
+        if and_tag:
+            qry += and_tag.lstrip()
+    else:
+        if and_author:
+            qry += and_author.lstrip()
+        if and_author and and_tag:
+            qry += or_tag.lstrip()
+        else:
+            qry += and_tag.lstrip()
     
+    qry +=  order_clause.lstrip()
+    # logger.info(f"{qry}")
     result = db.fetchall(qry)
+    
     if result:
         df = pd.DataFrame(result, columns=["Title", "Author", "Tags", "Published", "Modified"])
         return df
-    return pd.DataFrame()
 
 def main():
     st.title("🐍 Pybites Blog Analytics Dashboard")
@@ -209,13 +265,50 @@ def main():
         
         date_range = (start_date, end_date)
         st.sidebar.info(f"Range: {start_date} to {end_date}")
+        authors = [author[0] for author in fetch_authors(gold_table)]
+        author_selection = st.multiselect("Authors", ["All"] + authors)
+
+        choice = st.radio("Choice", ["And", "Or"])
+
+        tags = [tag[0] for tag in fetch_tags(gold_table)]
+        tag_selection = st.multiselect("Tags", ["All"] + tags)
     
-    overview_tab, trends_tab, authors_tab, data_tab = st.tabs([
+    info, overview_tab, trends_tab, authors_tab, data_tab = st.tabs([
+        "ℹ️ Information",
         "📊 Overview", 
         "📈 Trends", 
         "👥 Authors", 
         "📋 Data"
     ])
+
+    with info:
+        st.title("Dashboard Information & Usage Guide")
+
+        st.header("About the Data Source")
+        st.markdown("""
+        - Blog post data comes from [pybit.es](https://pybit.es).
+        - Only one sitemap index was parsed [sitemap1](https://pybit.es/post-sitemap1.xml)
+        - Data is scraped using custom tools and stored in DuckDB/S3/Supabase.
+        """)
+
+        st.header("How to Use the Dashboard Filters")
+        st.markdown("""
+        - Use the **date**, **author**, and **tags** filters at the top.
+        - Combine them to narrow results.
+        - The date range filter is used to query the **Trends** tab
+        - The author and tag multiselect filter is used to query the **Data** tab
+        - By default, when no filter selection is made 20 results are returned in the **Data** tab.
+        - When "Or" is selected and selections are made for both Author and Tag, results will include articles that match either the selected authors, the selected tags, or both.
+        - When "And" is selected and selections include both Author and Tag, only articles that match both the selected author(s) and tag(s) are shown.
+        - Since `tags` is an array, any selection returns results if available.
+        """)
+
+        st.header("Interpreting Results")
+        st.markdown("""
+        - All visualizations and tables update to reflect active filters.
+        """)
+
+        st.info("Data is historical. Contact admin for questions.")
 
     with overview_tab:
         st.header("Key Metrics")
@@ -251,7 +344,7 @@ def main():
             st.metric(
                 label="🏷️ Top Category", 
                 value=top_tag,
-                help="Most popular tag or most active year"
+                help="Most popular tag"
             )
     
         st.divider()
@@ -259,7 +352,7 @@ def main():
         # Quick overview chart
         st.subheader("📈 Recent Activity")
         # Show last 6 months by default
-        recent_start = max(start_date, today - timedelta(days=180))
+        recent_start = max(start_date, date(today.year, today.month, 1) - timedelta(days=180))
         line_chart((recent_start, end_date))
 
     with authors_tab:
@@ -302,21 +395,37 @@ def main():
             help="Choose how many recent articles to show (1-100)"
         )
 
-        recent_df = get_recent_articles(num_articles)
-        if not recent_df.empty:
-            st.dataframe(recent_df, use_container_width=True)
-        else:
+        query_selection = {}
+        if author_selection:
+            query_selection = {
+                "author": author_selection,
+            }
+        if tag_selection:
+            query_selection.update({
+                "tag": tag_selection
+            })
+        recent_df = get_recent_articles(query_selection, num_articles, choice)
+        try:
+            if not recent_df.empty:
+                st.dataframe(recent_df, use_container_width=True)
+            else:
+                st.warning("No recent articles found")
+        except Exception as e:
             st.warning("No recent articles found")
-        
-        # Add download option
-        if not recent_df.empty:
-            csv = recent_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download as CSV",
-                data=csv,
-                file_name="pybites_articles.csv",
-                mime="text/csv"
-            )
+        try:
+            # Add download option
+            if not recent_df.empty:
+                csv = recent_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download as CSV",
+                    data=csv,
+                    file_name="pybites_articles.csv",
+                    mime="text/csv"
+                )
+            # else:
+            #     st.warning("No recent articles to download")
+        except Exception as e:
+            pass
 
 if __name__ == "__main__":
     main()
