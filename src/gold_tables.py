@@ -2,6 +2,10 @@
 import os
 import json
 import io
+import re
+import asyncio
+import httpx
+from urllib.parse import urljoin
 import pandas as pd
 from db.duckdb_client import DuckDBConnector, enable_aws_for_database
 from db.supabase_client import SupabaseConnector
@@ -211,13 +215,186 @@ def create_authors_list(db, silver_table_name: str, author_list: str):
         logger.error(f"Error in creating author list table: {e}")
         raise
 
+def create_content_links_table(gold_content_links_table: str):
+    """Create gold table to store broken/working content links"""
+    try:
+        logger.info(f"Create gold content links table")
+
+        with supabase_db.transaction():
+            qry = f"""
+                    create table if not exists {gold_content_links_table} (
+                        row_id uuid,
+                        url text,
+                        link text,
+                        link_status varchar(100),
+                        date_modified timestamp
+                    )
+                """
+            supabase_db.execute(qry)
+    
+    except Exception as e:
+        logger.error(f"Error in creating content links table: {e}")
+        raise 
+            
+
+async def check_broken_links(url: str, link: str = None, timeout: int = 30) -> bool:
+    """Check whether given link is broken or not"""
+    headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+            "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8"
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=headers, follow_redirects=True, timeout=timeout)
+            resp.raise_for_status()
+    except httpx.TimeoutException:
+        return f'timeout {timeout} sec'
+    except Exception as e:
+        # link is broken
+        if link:
+            return 'internal_broken'
+        return 'external_broken'
+    if link:
+        return 'internal_working'
+    return 'external_working'
+
+async def check_content_links(content_links_table: str, year: int, month: int) -> List[Tuple]:
+    """Query the content links table to identify broken links"""
+    current_year = datetime.now().year
+    current_month = datetime.now().month
+    next_month = datetime.now().month + 1
+    days = (date(current_year, next_month, 1) - timedelta(days=1)).day
+    start_date = f"{year}-{month:02d}-01 00:00:00"
+    end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
+
+    try:
+        logger.info(f"Querying {content_links_table} for period from {start_date} to {end_date}")
+
+        qry = f"""
+            select
+                row_id,
+                url,
+                link,
+                date_modified
+            from
+                {content_links_table}
+            where
+                date_modified between '{start_date}' and '{end_date}'
+        """
+
+        results = duckdb_db.fetchall(qry)
+        logger.info(f"Fetched {len(results)} content links")
+        all_valid_links = []
+
+        logger.info(f"Checking link status for {len(results)} links")
+        async def gather_links(rec: Tuple) -> Tuple:
+            row_id, url, link, date_modified = str(rec[0]), rec[1], rec[2], rec[3]
+            link_status = None
+            try:
+                if 'http' in link:
+                    # a slight modification to exclude valid links but 
+                    # which are embedded incorrectly
+                    # is_valid_link = re.match(r'(https?:\/\/[^)]+)', link)
+                    is_valid_link = re.match(r'(^https?:\/\/[^)]+)', link)
+                    if is_valid_link:
+                        link_status = await check_broken_links(is_valid_link.group(1))
+                    else:
+                        # malformed internal links
+                        internal_url = urljoin(url, link)
+                        link_status = await check_broken_links(internal_url, link)
+                elif 'mail' in link:
+                    is_valid_link = re.match(r'(mailto:[^)]+)', link)
+                    if is_valid_link:
+                        link_status = "mail_link"
+                else:
+                    # internal link
+                    internal_url = urljoin(url, link)
+                    if not link.startswith("#"):
+                        link_status = await check_broken_links(internal_url, link)
+                    else:
+                        link_status = "internal_working"
+                    # logger.info(f"Article in {url} doesn't have a valid link {link}")
+            except Exception as e:
+                logger.error(f"Regex matching failed for url {url} and link {link}")
+                link_status = "parse_error"
+            return (row_id, url, link, link_status, date_modified)
+    
+        tasks = [gather_links(rec) for rec in results]
+        all_valid_links = await asyncio.gather(*tasks)
+        return all_valid_links
+
+    except Exception as e:
+        logger.error(f"Error querying table {content_links_table}: {e}")
+        raise
+
+    return all_valid_links
+
+def copy_content_links(silver_content_links_table: str, gold_content_links_table: str, year: int, month: int):
+    """Load content links to Supabase gold layer"""
+    current_year = datetime.now().year
+    current_month = datetime.now().month
+    next_month = datetime.now().month + 1
+    days = (date(current_year, next_month, 1) - timedelta(days=1)).day
+    start_date = f"{year}-{month:02d}-01 00:00:00"
+    end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
+
+    try:
+        logger.info(f"Delete {gold_content_links_table} for period {start_date} to {end_date}")
+        
+        with supabase_db.transaction():
+            qry = f"""
+                    delete from {gold_content_links_table}
+                    where date_modified between '{start_date}' and '{end_date}'
+                """
+            cur = supabase_db.execute(qry)
+            rows_deleted = cur.rowcount
+            logger.info(f"Deleted {rows_deleted} rows from {gold_content_links_table}")
+
+        results = asyncio.run(check_content_links(silver_content_links_table, year, month))
+
+        with supabase_db.transaction() as conn:
+            cursor = conn.cursor()
+
+            insert_query = f"""
+                insert into {gold_content_links_table} (row_id, url, link, link_status, date_modified) 
+                values %s
+            """
+
+            execute_values(
+                cursor,
+                insert_query,
+                results,
+                template=None,
+                page_size=1000
+            )
+            
+            cursor.execute(f"select count(*) from {gold_content_links_table}")
+            n_rows = cursor.fetchone()[0]
+            logger.info(f"Successfully inserted {n_rows} rows using execute_values")
+            cursor.close()
+
+    except Exception as e:
+        logger.error(f"Error copying content links into {gold_content_links_table}: {e}")
+        raise
+
+
+
 if __name__ == "__main__":
     author_list = "author_list"
     silver_table_name = "silver_pybites_blogs"
     gold_table_name = "gold_pybites_blogs"
+
+    silver_content_links_table = "silver_content_links"
+    gold_content_links_table = "gold_content_links"
 
     # supabase_db.execute(f"drop table {gold_table_name}")
 
     create_authors_list(duckdb_db, silver_table_name, author_list)
     create_gold_table(gold_table_name)
     copy_silver_blogs_table(silver_table_name, gold_table_name, 2021, 1)
+
+    # supabase_db.execute(f"drop table {gold_content_links_table}")
+    create_content_links_table(gold_content_links_table)
+    # df = pd.DataFrame(asyncio.run(check_content_links(silver_content_links_table, 2021, 1)))
+    # print(df[3].value_counts())
+    copy_content_links(silver_content_links_table, gold_content_links_table, 2021, 1)
