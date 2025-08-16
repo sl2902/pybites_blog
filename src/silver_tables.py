@@ -72,7 +72,7 @@ def backfill_silver_table(bronze_table_name: str, silver_table_name: str, year: 
             rows = db.execute(qry).fetchall()[0][0]
             logger.info(f"Deleted {rows} rows from {silver_table_name}")
 
-            logger.info(f"Insert incremental records into silver table")
+            logger.info(f"Insert backfill records into silver table")
             qry = f"""
                     with bronze_table as (
                         select
@@ -117,34 +117,111 @@ def backfill_silver_table(bronze_table_name: str, silver_table_name: str, year: 
             result = db.fetchall(f"select count(*) from {silver_table_name}")
             logger.info(f"Number of rows inserted {result[0][0]}")
     except Exception as e:
-        logger.error(f"Error in incremental silver table update: {e}")
+        logger.error(f"Error in backfilling silver table: {e}")
         raise
+
+def create_content_links_table(silver_table_name: str, silver_content_links_table: str):
+    """Create content links table"""
+    try:
+        logger.info(f"Create content links table {silver_content_links_table}")
+
+
+        with db.transaction():
+            qry = f"""
+                create table if not exists {silver_content_links_table} (
+                    row_id uuid default uuid(),
+                    url text,
+                    alias text,
+                    link text,
+                    date_modified timestamp
+                )
+            """
+            db.execute(qry)
+    except Exception as e:
+        logger.error(f"Error in creating silver content links table: {e}")
+        raise
+
+def backfill_content_links_table(silver_table_name: str, silver_content_links_table: str, year: int, month: int):
+    """Perform one-time backfill for the content links table. Ensure idempotency"""
+    current_year = datetime.now().year
+    current_month = datetime.now().month
+    next_month = datetime.now().month + 1
+    days = (date(current_year, next_month, 1) - timedelta(days=1)).day
+    start_date = f"{year}-{month:02d}-01 00:00:00"
+    end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
+
+    try:
+       logger.info(f"Backfilling silver table for period from {year}-{month:02d} to {current_year}-{current_month:02}")
+
+       with db.transaction():
+            logger.info(f"Delete any previous data to avoid duplication")
+            qry = f"""
+                    delete from {silver_content_links_table}
+                    where date_modified between '{start_date}' and '{end_date}'
+                """
+            rows = db.execute(qry).fetchall()[0][0]
+            logger.info(f"Deleted {rows} rows from {silver_content_links_table}")
+
+            logger.info(f"Insert backfill records into silver content links table")
+            qry = f"""
+                    insert into {silver_content_links_table} (
+                        url, alias, link, date_modified
+                    )
+                    with base as (
+                    select
+                        url,
+                        unnest(content_links) as t,
+                        date_modified
+                    from
+                        {silver_table_name}
+                    where
+                        date_modified between '{start_date}' and '{end_date}'
+                    )
+                    select
+                        url,
+                        t.text as alias,
+                        t.link as link,
+                        date_modified
+                    from
+                        base
+                """
+            
+            db.execute(qry)
+            result = db.fetchall(f"select count(*) from {silver_content_links_table}")
+            logger.info(f"Number of rows inserted {result[0][0]}")        
+    except Exception as e:
+        logger.error(f"Error in backfilling silver content links table: {e}")
+        raise
+    
 
 if __name__ == "__main__":
     bronze_table = "bronze_pybites_blogs"
     silver_table = "silver_pybites_blogs"
+    silver_content_links_table = "silver_content_links"
     
     # Create silver table with all transformations
     # db.execute(f"drop table if exists {silver_table}")
     create_silver_table(bronze_table, silver_table)
-    
     backfill_silver_table(bronze_table, silver_table, 2021, 1)
 
-    qry = f"""
+    create_content_links_table(silver_table, silver_content_links_table)
+    backfill_content_links_table(silver_table, silver_content_links_table, 2021, 1)
 
-        select
-          url,
-          domain,
-          category,
-          url_title,
-          days_between_published_modified,
-          content_paragraphs,
-          total_content_words
-        from
-         {silver_table}
-        limit 10;
-    """
-    result = db.fetchall(qry)
-    logger.info(f"{result}")
+    # qry = f"""
+
+    #     select
+    #       url,
+    #       domain,
+    #       category,
+    #       url_title,
+    #       days_between_published_modified,
+    #       content_paragraphs,
+    #       total_content_words
+    #     from
+    #      {silver_table}
+    #     limit 10;
+    # """
+    # result = db.fetchall(qry)
+    # logger.info(f"{result}")
 
         
