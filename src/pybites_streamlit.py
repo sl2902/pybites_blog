@@ -65,7 +65,7 @@ def get_overview_metrics():
     top_author_result = db.fetchall(top_author_query)[0][0]
     top_author = top_author_result or "N/A"
 
-    top_three_tags = f"""
+    top_tag = f"""
         with base as (
             select
                 unnest(tags) t
@@ -79,7 +79,7 @@ def get_overview_metrics():
             order by count(*) desc
             limit 1
     """
-    top_tag = db.fetchall(top_three_tags)[0][0]
+    top_tag = db.fetchall(top_tag)[0][0]
 
     return total_articles, last_six_month_articles, top_author, top_tag
 
@@ -208,7 +208,7 @@ def get_recent_articles(query_selection: List, limit: int = 10, choice: str = "A
             and_tag = f"""
             and tags @> array[{", ".join([f"'{tag}'" for tag in query_selection.get("tag")])}]
         """
-        
+
     order_clause = f"""
         order by date_published desc
         limit {limit}
