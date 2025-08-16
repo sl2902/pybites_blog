@@ -15,6 +15,7 @@ dependencies = [
 "boto3",
 "duckdb",
 "fastapi", 
+"httpx",
 "python-multipart", "pydantic-settings",
 "loguru",
 "lxml",
