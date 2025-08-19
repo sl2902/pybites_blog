@@ -470,6 +470,10 @@ async def main():
             pass
     
     with search_tab:
+        password = st.text_input("Enter search password:", type="password")
+        if password != st.secrets.get("search_password"):
+            st.warning("Please enter the correct password to use the search feature.")
+            st.stop()
         choice = st.radio("Choice", ["Keyword", "Contextual Search", "Hybrid Search"])
         query = st.text_input("Enter text")
         preprocessed_query = preprocess(query)
