@@ -16,17 +16,20 @@ dependencies = [
 "duckdb",
 "fastapi", 
 "httpx",
+"openai",
 "python-multipart", "pydantic-settings",
 "loguru",
 "lxml",
 "pandas",
 "python-dotenv",
 "pyarrow",
+"pymilvus",
 "psycopg2",
 "psycopg2-binary",
 "requests",
 "selenium",
 "streamlit",
+"tiktoken",
 ]
 classifiers = ["Programming Language :: Python :: 3"]
 keywords = ["one", "two"]
