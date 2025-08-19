@@ -12,9 +12,9 @@ load_dotenv()
 class OpenAIServices:
     def __init__(self):
         logger.info(f"Initializing OpenAI service")
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY") or st["OPENAI"]["OPENAI_API_KEY"])
-        self.model = os.getenv("OPENAI_MODEL") or st["OPENAI"]["OPENAI_MODEL"]
-        self.embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL") or st["OPENAI"]["OPENAI_EMBEDDING_MODEL"]
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI"]["OPENAI_API_KEY"])
+        self.model = os.getenv("OPENAI_MODEL") or st.secrets["OPENAI"]["OPENAI_MODEL"]
+        self.embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL") or st.secrets["OPENAI"]["OPENAI_EMBEDDING_MODEL"]
     
     async def get_embedding(self, text: str) -> List[float]:
         """Get embedding for a text using OpenAI's embedding model"""
