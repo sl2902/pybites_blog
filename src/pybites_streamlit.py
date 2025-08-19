@@ -4,10 +4,14 @@ import os
 from db.supabase_client import SupabaseConnector
 import streamlit as st
 from loguru import logger
-from typing import Any, List, Tuple
+from typing import Any, List, Dict, Tuple
 from datetime import date, datetime, timedelta
 import altair as alt
 import pandas as pd
+from openai_services.openai_client import openai_service
+from rag_system.rag_client import milvus_hybrid_service
+import tiktoken
+import asyncio
 
 # duckdb_db = DuckDBConnector('pybites.db')
 # try:
@@ -234,7 +238,44 @@ def get_recent_articles(query_selection: List, limit: int = 10, choice: str = "A
         df = pd.DataFrame(result, columns=["Title", "Author", "Tags", "Published", "Modified"])
         return df
 
-def main():
+def preprocess(text: str) -> str:
+    """Preprocess the user query"""
+    encoder = tiktoken.get_encoding("cl100k_base")
+    tokens = encoder.encode(text)
+    decoded = encoder.decode(tokens)
+    return decoded
+
+def format_metadata(milvus_output: List[Dict[str, Any]]):
+    """Format the metadata from Milvus db output"""
+    metadata_collection = {}
+    for result in milvus_output:
+        metadata = result.get("metadata")
+        if not "url" in metadata_collection:
+            metadata_collection["url"] = []
+            metadata_collection["author"] = []
+            metadata_collection["date_published"] = []
+            metadata_collection["tags"] = []
+        if metadata.get("url") not in metadata_collection["url"]:
+            metadata_collection["url"].append(metadata.get("url"))
+            metadata_collection["author"].append(metadata.get("author"))
+            metadata_collection["date_published"].append(metadata.get("date_published"))
+            metadata_collection["tags"].append(metadata.get("tags"))
+    
+    def make_clickable(url):
+        return f'<a href="{url}" target="_blank">{url}</a>'
+
+    if metadata_collection:
+        df = pd.DataFrame(metadata_collection)
+        # df["url"] = df["url"].apply(make_clickable)
+        # st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.dataframe(
+            df,
+            column_config={"url": st.column_config.LinkColumn("Website link")},
+        )
+    
+    # st.dataframe(df)
+
+async def main():
     st.title("🐍 Pybites Blog Analytics Dashboard")
 
     # author = st.selectbox("Author", ["All"] + authors)
@@ -273,12 +314,13 @@ def main():
         tags = [tag[0] for tag in fetch_tags(gold_table)]
         tag_selection = st.multiselect("Tags", ["All"] + tags)
     
-    info, overview_tab, trends_tab, authors_tab, data_tab = st.tabs([
+    info, overview_tab, trends_tab, authors_tab, data_tab, search_tab = st.tabs([
         "ℹ️ Information",
         "📊 Overview", 
         "📈 Trends", 
         "👥 Authors", 
-        "📋 Data"
+        "📋 Data",
+        "🔍 Search",
     ])
 
     with info:
@@ -426,6 +468,21 @@ def main():
             #     st.warning("No recent articles to download")
         except Exception as e:
             pass
+    
+    with search_tab:
+        choice = st.radio("Choice", ["Keyword", "Contextual Search", "Hybrid Search"])
+        query = st.text_input("Enter text")
+        preprocessed_query = preprocess(query)
+        embedding = await openai_service.get_embedding(preprocessed_query)
+
+        if choice == "Hybrid Search":
+            results = milvus_hybrid_service.search_similarity(query, embedding, 5)
+        elif choice == "Keyword":
+            results = milvus_hybrid_service.search_sparse_only(query, 5)
+        else:
+            results = milvus_hybrid_service.search_dense_only(embedding, 5)
+        # st.write(results)
+        format_metadata(results)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
