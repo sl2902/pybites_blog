@@ -12,14 +12,15 @@ from pymilvus import (
     RRFRanker,
 )
 from loguru import logger
+import streamlit as st
 from typing import Any, List, Dict, Optional
 from dotenv import load_dotenv
 load_dotenv()
 
-milvus_host = os.getenv("MILVUS_HOST")
-milvus_port = os.getenv("MILVUS_PORT")
-milvus_username = os.getenv("MILVUS_USERNAME")
-milvus_password = os.getenv("MILVUS_PASSWORD")
+milvus_host = os.getenv("MILVUS_HOST") or st.secrets["MILVUS"]["MILVUS_HOST"]
+milvus_port = os.getenv("MILVUS_PORT") or st.secrets["MILVUS"]["MILVUS_PORT"]
+milvus_username = os.getenv("MILVUS_USERNAME") or st.secrets["MILVUS"]["MILVUS_USERNAME"]
+milvus_password = os.getenv("MILVUS_PASSWORD") or st.secrets["MILVUS"]["MILVUS_PASSWORD"]
 milvus_collection_name = "pybites_blogs"
 
 class MilvusService:
