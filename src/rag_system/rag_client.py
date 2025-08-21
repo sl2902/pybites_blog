@@ -134,7 +134,7 @@ class MilvusService:
             self.client.load_collection(self.collection_name)
             self.client.upsert(self.collection_name, documents)
             self.client.flush(self.collection_name)
-            logger.info(f"Upserted {len(documents)} documents into Milvus")
+            logger.info(f"Upserted {len(documents)} document chunks into Milvus")
         except Exception as e:
             logger.error(f"Failed to insert documents: {e}")
             raise
