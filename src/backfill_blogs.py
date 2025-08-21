@@ -1,4 +1,5 @@
-"""Backfill historical blog pages"""
+"""Backfill historical blog pages. Load the files to S3"""
+import argparse
 from duckdb.duckdb import Error, CatalogException, ParserException
 from db.duckdb_client import DuckDBConnector, enable_aws_for_database
 from pybites_site.blog_parser import (
@@ -177,19 +178,68 @@ def test_s3_read():
         logger.error(f"Error reading from S3: {e}")
         raise
 
-
-if __name__ == "__main__":
-    urllist = pybites_blog_parser.parse_site_map_index("https://pybit.es/post-sitemap1.xml")
+def run_backfill_blogs_pipeline():
+    """Pipeline to run all the steps"""
+    parser = argparse.ArgumentParser(description="Pybites backfill blog parser")
+    parser.add_argument(
+        "--url",
+        "-u",
+        type=str,
+        required=True,
+        help="Enter the pybites sitemap url",
+    )
+    parser.add_argument(
+        "--start-year",
+        type=int,
+        required=True,
+        help="Enter the 4 digit starting year, based on last modidied date, from which to start parsing",
+    )
+    parser.add_argument(
+        "--end-year",
+        type=int,
+        default=datetime.now().year,
+        help="Enter the optional 4 digit ending year, based on last modidied date, to end parsing",
+    )
+    args = parser.parse_args()
+    if not("pybit.es" in args.url and "post-sitemap1" in args.url):
+        logger.error(f"Invalid url {args.url} passed. Only pybit.es sitemap url accepted")
+        return
+    
+    # earliet last modified date year is 2021
+    if args.start_year < 2021:
+        logger.error(f"Invalid start year {args.start_year}. The oldest last modified date is 2021")
+        return
+    
+    if args.end_year and args.end_year > datetime.now().year:
+        logger.error(f"Invalid end year {args.end_year}. It cannot be greater than current year")
+        return
+    
+    if args.end_year and args.start_year > args.end_year or args.start_year > datetime.now().year:
+        logger.error(f"start_year {args.start_year} cannot be greater than end_year {args.end_year}")
+        return
+    
+    urllist = pybites_blog_parser.parse_site_map_index(args.url)
     filtered_urls = [url for url in urllist if len(url) > 1]
     create_url_table(sitemap_urls_table)
     upsert_urls(sitemap_urls_table, filtered_urls)
     # check_table_data(sitemap_urls_table)
     blog_counter = 0
-    for year in range(2021, 2026):
+    start_year, end_year = args.start_year, args.end_year
+    if end_year:
+        end_year += 1
+    else:
+        end_year = datetime.now().year
+    for year in range(start_year, end_year):
         for month in range(1, 13):
             n_blogs = parse_and_write_blog_month(year, month)
             blog_counter += n_blogs
     logger.info(f"Total number of blogs parsed {blog_counter}")
+
+
+if __name__ == "__main__":
+    run_backfill_blogs_pipeline()
+    
+    
     
     # Test reading from S3
     # logger.info("Testing S3 read functionality...")
