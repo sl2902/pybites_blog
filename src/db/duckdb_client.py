@@ -83,7 +83,7 @@ class DuckDBConnector:
 
 def enable_aws_for_database(db, region='us-west-2', logger=None):
     """Enable AWS S3 access for database connection"""
-    if isinstance(db, duckdb.DuckDBPyConnection):
+    if isinstance(db, DuckDBConnector):
         db.execute("INSTALL httpfs;")
         db.execute("LOAD httpfs;")
         db.execute(f"SET s3_region='{region}';")
