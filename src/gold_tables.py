@@ -1,5 +1,6 @@
 """Build gold tables in Supbase for Streamlit charts"""
 import os
+import argparse
 import json
 import io
 import re
@@ -85,16 +86,16 @@ def create_gold_table(gold_table_name: str):
 def copy_silver_blogs_table(
         silver_table_name: str, 
         gold_table_name: str,
-        year: int, 
-        month: int
+        start_date: str, 
+        end_date: str
     ):
     """Copy the Duckdb silver_pybites_blogs into Supabase gold_pybites_blogs"""
-    current_year = datetime.now().year
-    current_month = datetime.now().month
-    next_month = datetime.now().month + 1
-    days = (date(current_year, next_month, 1) - timedelta(days=1)).day
-    start_date = f"{year}-{month:02d}-01 00:00:00"
-    end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
+    # current_year = datetime.now().year
+    # current_month = datetime.now().month
+    # next_month = datetime.now().month + 1
+    # days = (date(current_year, next_month, 1) - timedelta(days=1)).day
+    # start_date = f"{year}-{month:02d}-01 00:00:00"
+    # end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
 
     try:
         logger.info(f"Delete {gold_table_name} for period {start_date} to {end_date}")
@@ -258,14 +259,14 @@ async def check_broken_links(url: str, link: str = None, timeout: int = 30) -> b
         return 'internal_working'
     return 'external_working'
 
-async def check_content_links(content_links_table: str, year: int, month: int) -> List[Tuple]:
+async def check_content_links(content_links_table: str, start_date: str, end_date: str) -> List[Tuple]:
     """Query the content links table to identify broken links"""
-    current_year = datetime.now().year
-    current_month = datetime.now().month
-    next_month = datetime.now().month + 1
-    days = (date(current_year, next_month, 1) - timedelta(days=1)).day
-    start_date = f"{year}-{month:02d}-01 00:00:00"
-    end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
+    # current_year = datetime.now().year
+    # current_month = datetime.now().month
+    # next_month = datetime.now().month + 1
+    # days = (date(current_year, next_month, 1) - timedelta(days=1)).day
+    # start_date = f"{year}-{month:02d}-01 00:00:00"
+    # end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
 
     try:
         logger.info(f"Querying {content_links_table} for period from {start_date} to {end_date}")
@@ -329,14 +330,14 @@ async def check_content_links(content_links_table: str, year: int, month: int) -
 
     return all_valid_links
 
-def copy_content_links(silver_content_links_table: str, gold_content_links_table: str, year: int, month: int):
+def copy_content_links(silver_content_links_table: str, gold_content_links_table: str, start_date: str, end_date: str):
     """Load content links to Supabase gold layer"""
-    current_year = datetime.now().year
-    current_month = datetime.now().month
-    next_month = datetime.now().month + 1
-    days = (date(current_year, next_month, 1) - timedelta(days=1)).day
-    start_date = f"{year}-{month:02d}-01 00:00:00"
-    end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
+    # current_year = datetime.now().year
+    # current_month = datetime.now().month
+    # next_month = datetime.now().month + 1
+    # days = (date(current_year, next_month, 1) - timedelta(days=1)).day
+    # start_date = f"{year}-{month:02d}-01 00:00:00"
+    # end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
 
     try:
         logger.info(f"Delete {gold_content_links_table} for period {start_date} to {end_date}")
@@ -350,7 +351,7 @@ def copy_content_links(silver_content_links_table: str, gold_content_links_table
             rows_deleted = cur.rowcount
             logger.info(f"Deleted {rows_deleted} rows from {gold_content_links_table}")
 
-        results = asyncio.run(check_content_links(silver_content_links_table, year, month))
+        results = asyncio.run(check_content_links(silver_content_links_table, start_date, end_date))
 
         with supabase_db.transaction() as conn:
             cursor = conn.cursor()
@@ -377,9 +378,71 @@ def copy_content_links(silver_content_links_table: str, gold_content_links_table
         logger.error(f"Error copying content links into {gold_content_links_table}: {e}")
         raise
 
+def run_gold_pipeline():
+    """Run the steps in the pipeline"""
+    bronze_table = "bronze_pybites_blogs"
+    silver_table = "silver_pybites_blogs"
+    silver_content_links_table = "silver_content_links"
 
+    parser = argparse.ArgumentParser(description="Populate Pybites silver tables")
+    parser.add_argument(
+        "--start-year",
+        type=int,
+        required=True,
+        help="Enter the 4 digit starting year, based on last modidied date, from which to start loading",
+    )
+    parser.add_argument(
+        "--start-month",
+        type=int,
+        required=True,
+        help="Enter the digit starting month, based on last modidied date, from which to start loading",
+    )
+    parser.add_argument(
+        "--end-year",
+        type=int,
+        default=datetime.now().year,
+        help="Enter the optional 4 digit ending year, based on last modidied date, to end loading",
+    )
+    parser.add_argument(
+        "--end-month",
+        type=int,
+        default=datetime.now().month,
+        help="Enter the digit ending month, based on last modidied date, from which to end loading",
+    )
+    args = parser.parse_args()
+    # earliet last modified date year is 2021
+    if args.start_year < 2021:
+        logger.error(f"Invalid start year {args.start_year}. The oldest last modified date is 2021")
+        return
+    
+    if not (0 < args.start_month < 13 and 0 < args.end_month < 13):
+        logger.error(f"Invalid start month {args.start_month} and/or invalid end month {args.end_month}. Valid range [1-12] inclusive")
+        return
+    
+    if args.end_year and args.end_year > datetime.now().year:
+        logger.error(f"Invalid end year {args.end_year}. It cannot be greater than current year")
+        return
+    
+    if args.start_year > args.end_year:
+        logger.error(f"start_year {args.start_year} cannot be greater than end_year {args.end_year}")
+        return
+    
+    if args.start_year == args.end_year and args.start_month > args.end_month:
+        logger.error(f"start_month {args.start_month} cannot be greater than end_month {args.end_month} for the same period {args.start_year}")
+        return
+    
+    if args.end_month > datetime.now().month:
+        logger.error(f"No data available for future months in the given period {args.end_year}")
+        return
+    
+    current_year = args.end_year
+    current_month = args.end_month
 
-if __name__ == "__main__":
+    next_month = current_month + 1
+    days = (date(current_year, next_month, 1) - timedelta(days=1)).day
+    start_date = f"{args.start_year}-{args.start_month:02d}-01 00:00:00"
+    end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
+
     author_list = "author_list"
     silver_table_name = "silver_pybites_blogs"
     gold_table_name = "gold_pybites_blogs"
@@ -391,10 +454,15 @@ if __name__ == "__main__":
 
     create_authors_list(duckdb_db, silver_table_name, author_list)
     create_gold_table(gold_table_name)
-    copy_silver_blogs_table(silver_table_name, gold_table_name, 2021, 1)
+    copy_silver_blogs_table(silver_table_name, gold_table_name, start_date, end_date)
 
     # supabase_db.execute(f"drop table {gold_content_links_table}")
     create_content_links_table(gold_content_links_table)
     # df = pd.DataFrame(asyncio.run(check_content_links(silver_content_links_table, 2021, 1)))
     # print(df[3].value_counts())
-    copy_content_links(silver_content_links_table, gold_content_links_table, 2021, 1)
+    copy_content_links(silver_content_links_table, gold_content_links_table, start_date, end_date)
+
+
+if __name__ == "__main__":
+    run_gold_pipeline()
+

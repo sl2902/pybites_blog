@@ -85,7 +85,8 @@ def create_bronze_table(create_query: str, table_name: str, s3_path: str = None,
         logger.error(f"Error creating bronze table: {e}")
         raise
 
-if __name__ == "__main__":
+def run_bronze_pipeline():
+    """Run the steps in a pipeline"""
     table_name = "bronze_pybites_blogs"
     create_query = f"""
                     create table if not exists {table_name} (
@@ -100,6 +101,10 @@ if __name__ == "__main__":
                     );
                 """
     create_bronze_table(create_query, table_name, S3_PATH, ["year", "month"])
+
+
+if __name__ == "__main__":
+    run_bronze_pipeline()
     # qry = f"""
     #         with base as (
     #         select
