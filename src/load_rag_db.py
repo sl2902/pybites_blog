@@ -1,8 +1,10 @@
 """Chunk and load pybites blogs into Milvus Vector db"""
 import os
+import argparse
 import sys
 import json
 import asyncio
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Tuple, Generator, Any, Optional
 from loguru import logger
 from rag_system.rag_client import (
@@ -229,11 +231,76 @@ async def run_pipeline_memory_efficient(
         raise
 
 
-async def run_pipeline(table_name: str):
-    try:
-        logger.info(f"Query table {table_name}")
+async def run_pipeline():
+    """Run the steps in the pipeline"""
+    table_name = "gold_pybites_blogs"
+    parser = argparse.ArgumentParser(description="Populate Pybites RAG DB")
+    parser.add_argument(
+        "--start-year",
+        type=int,
+        required=True,
+        help="Enter the 4 digit starting year, based on last modidied date, from which to start loading",
+    )
+    parser.add_argument(
+        "--start-month",
+        type=int,
+        required=True,
+        help="Enter the digit starting month, based on last modidied date, from which to start loading",
+    )
+    parser.add_argument(
+        "--end-year",
+        type=int,
+        default=datetime.now().year,
+        help="Enter the optional 4 digit ending year, based on last modidied date, to end loading",
+    )
+    parser.add_argument(
+        "--end-month",
+        type=int,
+        default=datetime.now().month,
+        help="Enter the digit ending month, based on last modidied date, from which to end loading",
+    )
+    args = parser.parse_args()
+    # earliet last modified date year is 2021
+    if args.start_year < 2021:
+        logger.error(f"Invalid start year {args.start_year}. The oldest last modified date is 2021")
+        return
+    
+    if not (0 < args.start_month < 13 and 0 < args.end_month < 13):
+        logger.error(f"Invalid start month {args.start_month} and/or invalid end month {args.end_month}. Valid range [1-12] inclusive")
+        return
+    
+    if args.end_year and args.end_year > datetime.now().year:
+        logger.error(f"Invalid end year {args.end_year}. It cannot be greater than current year")
+        return
+    
+    if args.start_year > args.end_year:
+        logger.error(f"start_year {args.start_year} cannot be greater than end_year {args.end_year}")
+        return
+    
+    if args.start_year == args.end_year and args.start_month > args.end_month:
+        logger.error(f"start_month {args.start_month} cannot be greater than end_month {args.end_month} for the same period {args.start_year}")
+        return
+    
+    if args.end_month > datetime.now().month:
+        logger.error(f"No data available for future months in the given period {args.end_year}")
+        return
+    
+    current_year = args.end_year
+    current_month = args.end_month
 
-        blogs = await asyncio.to_thread(supabase_db.fetchall, f"select * from {table_name}")
+    next_month = current_month + 1
+    days = (date(current_year, next_month, 1) - timedelta(days=1)).day
+    start_date = f"{args.start_year}-{args.start_month:02d}-01 00:00:00"
+    end_date = f"{current_year}-{current_month:02d}-{days} 23:59:59"
+
+    try:
+        logger.info(f"Query table {table_name} for period from {start_date} to {end_date}")
+
+        blogs = await asyncio.to_thread(supabase_db.fetchall, f"""
+                                        select * from {table_name}
+                                        where date_modified between '{start_date}' and '{end_date}'
+                                        """
+                                        )
         chunks_processed = 0
         for blog in blogs:
             document = await create_document_chunks_from_blog(blog)
@@ -251,7 +318,7 @@ async def run_pipeline(table_name: str):
     logger.info(f"Complete ingesting {len(blogs)} to Milvus")
 
 if __name__ == "__main__":
-    table_name = "gold_pybites_blogs"
+    asyncio.run(run_pipeline())
     # asyncio.run(run_pipeline(table_name))
     # asyncio.run(run_pipeline_memory_efficient(table_name))
-    milvus_hybrid_service.get_distinct_row_id_count()
+    # milvus_hybrid_service.get_distinct_row_id_count()
