@@ -380,10 +380,6 @@ def copy_content_links(silver_content_links_table: str, gold_content_links_table
 
 def run_gold_pipeline():
     """Run the steps in the pipeline"""
-    bronze_table = "bronze_pybites_blogs"
-    silver_table = "silver_pybites_blogs"
-    silver_content_links_table = "silver_content_links"
-
     parser = argparse.ArgumentParser(description="Populate Pybites silver tables")
     parser.add_argument(
         "--start-year",
